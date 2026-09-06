@@ -14,7 +14,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from src.data_loader import run_data_loader
-from src.preprocessing import run_eda
+from src.preprocessing import run_eda, analyze_purchase_intervals
 
 # -----------------------------------------------------------------------------
 # Global Yapılandırma ve Parametreler
@@ -50,6 +50,10 @@ def main():
     print("\n>>> [AŞAMA 2/7] KEŞİFÇİ VERİ ANALİZİ")
 
     customer_df = run_eda(customer_df)
+
+    print("\n>>> [AŞAMA 2B] SATIN ALMA ARALIKLARI ANALİZİ")
+    transaction_df = pd.read_csv(DATA_PATH)
+    purchase_intervals = analyze_purchase_intervals(transaction_df)
 
 
 if __name__ == "__main__":
