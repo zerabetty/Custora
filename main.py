@@ -14,6 +14,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from src.data_loader import run_data_loader
+from src.preprocessing import run_eda
 
 # -----------------------------------------------------------------------------
 # Global Yapılandırma ve Parametreler
@@ -42,6 +43,13 @@ def main():
     print("\n" + "=" * 70)
     print(f"[+] Pipeline ilk aşaması başarıyla tamamlandı. (Süre: {time.time() - pipeline_start:.2f}s)")
     print("=" * 70)
+
+    # -------------------------------------------------------------------------
+    # ADIM 2: Keşifçi Veri Analizi (EDA)
+    # -------------------------------------------------------------------------
+    print("\n>>> [AŞAMA 2/7] KEŞİFÇİ VERİ ANALİZİ")
+
+    customer_df = run_eda(customer_df)
 
 
 if __name__ == "__main__":
