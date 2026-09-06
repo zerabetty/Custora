@@ -7,6 +7,10 @@ import sys
 import time
 from pathlib import Path
 import pandas as pd
+pd.set_option("display.max_columns", None)
+pd.set_option("display.width", 200)
+pd.set_option("display.max_colwidth", 30)
+pd.set_option("display.float_format", lambda x: f"{x:.2f}")
 
 # Proje dizinini ve src paketini dinamik olarak path'e ekle
 BASE_DIR = Path(__file__).resolve().parent
@@ -25,6 +29,14 @@ from src.preprocessing import (
     evaluate_log_transform,
     analyze_feature_correlations,
     prepare_kmeans_features
+)
+from src.segmentation import (
+    evaluate_kmeans_clusters,
+    fit_kmeans_model,
+    profile_clusters,
+    analyze_cluster_medians,
+    assign_cluster_names,
+    visualize_clusters_pca
 )
 
 # -----------------------------------------------------------------------------
@@ -136,6 +148,66 @@ def main():
         customer_df
     )
 
+    # -------------------------------------------------------------------------
+    # ADIM 3: K-Means Müşteri Segmentasyonu
+    # -------------------------------------------------------------------------
+
+    # -------------------------------------------------------------------------
+    # AŞAMA 3A: Optimal K Analizi
+    # -------------------------------------------------------------------------
+    print("\n>>> [AŞAMA 3A] K-MEANS OPTIMAL K ANALİZİ")
+
+    kmeans_evaluation = evaluate_kmeans_clusters(
+        kmeans_scaled_df
+    )
+
+    # -------------------------------------------------------------------------
+    # AŞAMA 3B: Final K-Means Modeli ve Cluster Atama
+    # -------------------------------------------------------------------------
+    print("\n>>> [AŞAMA 3B] FINAL K-MEANS MODELİ")
+
+    kmeans_model, cluster_labels, cluster_summary = fit_kmeans_model(
+        kmeans_scaled_df,
+        n_clusters=4
+    )
+
+    # -------------------------------------------------------------------------
+    # AŞAMA 3C: Cluster Profiling
+    # -------------------------------------------------------------------------
+    print("\n>>> [AŞAMA 3C] CLUSTER PROFILING")
+
+    customer_clustered_df, cluster_profile = profile_clusters(
+        customer_df,
+        cluster_labels
+    )
+
+    # -------------------------------------------------------------------------
+    # AŞAMA 3D: Cluster Median Analizi
+    # -------------------------------------------------------------------------
+    print("\n>>> [AŞAMA 3D] CLUSTER MEDIAN ANALİZİ")
+
+    cluster_medians = analyze_cluster_medians(
+        customer_clustered_df
+    )
+
+    # -------------------------------------------------------------------------
+    # AŞAMA 3E: Business Segment İsimlendirme
+    # -------------------------------------------------------------------------
+    print("\n>>> [AŞAMA 3E] BUSINESS SEGMENT İSİMLENDİRME")
+
+    customer_clustered_df, segment_summary = assign_cluster_names(
+        customer_clustered_df
+    )
+
+    # -------------------------------------------------------------------------
+    # AŞAMA 3F: PCA Görselleştirme
+    # -------------------------------------------------------------------------
+    print("\n>>> [AŞAMA 3F] PCA GÖRSELLEŞTİRME")
+
+    pca_df, pca_model = visualize_clusters_pca(
+        kmeans_scaled_df,
+        cluster_labels
+    )
 
 if __name__ == "__main__":
     main()
