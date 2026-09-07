@@ -11,7 +11,7 @@ import pandas as pd
 RFM_SEGMENT_MAP = {
     r"[1-2][1-2]": "hibernating",
     r"[1-2][3-4]": "at_Risk",
-    r"[1-2]5": "cant_loose",
+    r"[1-2]5": "cant_lose",
     r"3[1-2]": "about_to_sleep",
     r"33": "need_attention",
     r"[3-4][4-5]": "loyal_customers",
@@ -79,7 +79,11 @@ def extract_customer_features(obs_df: pd.DataFrame, target_df: pd.DataFrame, cut
 
     # RFM Skorlama (1-5 Arası)
     order_agg["recency_score"] = pd.qcut(order_agg["recency_days"], 5, labels=[5, 4, 3, 2, 1])
-    order_agg["frequency_score"] = pd.qcut(order_agg["total_orders"].rank(method="first"), 5, labels=[1, 2, 3, 4, 5])
+    order_agg["frequency_score"] = pd.cut(
+        order_agg["total_orders"],
+        bins=[0, 1, 2, 3, 5, np.inf],
+        labels=[1, 2, 3, 4, 5]
+    ).astype(int)
     order_agg["monetary_score"] = pd.qcut(order_agg["total_monetary"], 5, labels=[1, 2, 3, 4, 5])
 
     # RFM Skoru ve Regex Segment Eşleştirmesi
@@ -119,6 +123,12 @@ def extract_customer_features(obs_df: pd.DataFrame, target_df: pd.DataFrame, cut
     target_buyers = set(target_df["customerid"].unique())
     customer_df["is_churn"] = (~customer_df.index.isin(target_buyers)).astype(int)
 
+    # 6. Olgunluk Filtresi (Maturity Buffer: Yaş >= 180 gün VEYA en az 2 sipariş)
+    customer_df["is_matured"] = (
+        (customer_df["customer_age_t_days"] >= 180) |
+        (customer_df["total_orders"] >= 2)
+    ).astype(int)
+
     return customer_df
 
 
@@ -129,29 +139,58 @@ def print_step1_report(df: pd.DataFrame):
     print("=" * 60)
     base_cols = ["customer_name", "emailaddress", "territory_name"]
     target_col = ["is_churn"]
-    engineered_cols = [c for c in df.columns if c not in base_cols and c not in target_col]
+    filter_col = ["is_matured"]
+    engineered_cols = [c for c in df.columns if c not in base_cols and c not in target_col and c not in filter_col]
 
     print(f"Toplam Analitik Müşteri Sayısı : {len(df):,}")
     print(f"Toplam Sütun Sayısı             : {df.shape[1]}")
     print(f"  - Temel Profil Bilgileri      : {len(base_cols)} (İsim, E-posta, Bölge)")
     print(f"  - Türetilen Öznitelik Sayısı  : {len(engineered_cols)}")
     print(f"  - Hedef Değişken (Target)     : {len(target_col)} (is_churn)")
+    print(f"  - Olgunluk Filtresi (Maturity): {len(filter_col)} (is_matured)")
+
+    # Olgunluk Dağılımı
+    matured_count = df["is_matured"].sum()
+    unmatured_count = len(df) - matured_count
+    print("\n[+] Müşteri Olgunluk (Maturity) Dağılımı:")
+    print(f"  - Olgun Müşteriler (Yaş >= 180g veya 2+ Sipariş) : {matured_count:,} (%{matured_count / len(df) * 100:.2f})")
+    print(f"  - Taze Müşteriler (Döngüsü Henüz Dolmamış)        : {unmatured_count:,} (%{unmatured_count / len(df) * 100:.2f})")
 
     churn_counts = df["is_churn"].value_counts()
     churn_ratios = df["is_churn"].value_counts(normalize=True) * 100
-    print("\n[+] Hedef Değişken (Churn) Dağılımı:")
+    print("\n[+] Toplam Portföy Hedef Değişken (Churn) Dağılımı:")
     print(f"  - Churn (1)     : {churn_counts.get(1, 0):,} müşteri (%{churn_ratios.get(1, 0):.2f})")
     print(f"  - Retained (0)  : {churn_counts.get(0, 0):,} müşteri (%{churn_ratios.get(0, 0):.2f})")
 
-    print("\n[+] RFM Segmentleri Bazında Dağılım ve Churn Oranları:")
+    # Olgun Kitlede Churn
+    matured_df = df[df["is_matured"] == 1]
+    mat_churn_counts = matured_df["is_churn"].value_counts()
+    mat_churn_ratios = matured_df["is_churn"].value_counts(normalize=True) * 100
+    print("\n[+] OLGUNLAŞMIŞ PORTFÖY Hedef Değişken (Churn) Dağılımı (Modelleme Evreni):")
+    print(f"  - Churn (1)     : {mat_churn_counts.get(1, 0):,} müşteri (%{mat_churn_ratios.get(1, 0):.2f})")
+    print(f"  - Retained (0)  : {mat_churn_counts.get(0, 0):,} müşteri (%{mat_churn_ratios.get(0, 0):.2f})")
+
+    print("\n[+] RFM Segmentleri Bazında Dağılım ve Churn Oranları (Olgun Müşteri Ayrımı ile):")
     segment_summary = df.groupby("rfm_segment").agg(
         musteri_sayisi=("recency_days", "count"),
+        olgun_sayisi=("is_matured", "sum"),
         ort_recency=("recency_days", "mean"),
         ort_siparis=("total_orders", "mean"),
         ort_ciro=("total_monetary", "mean"),
-        churn_orani=("is_churn", "mean"),
+        toplam_churn_orani=("is_churn", "mean"),
     ).reset_index()
-    segment_summary["churn_orani"] = (segment_summary["churn_orani"] * 100).round(2)
+    
+    # Olgun olanlardaki churn oranı
+    mat_segment_churn = (
+        df[df["is_matured"] == 1]
+        .groupby("rfm_segment")["is_churn"]
+        .mean()
+        .rename("olgun_churn_orani")
+    )
+    segment_summary = segment_summary.merge(mat_segment_churn, on="rfm_segment", how="left")
+
+    segment_summary["toplam_churn_orani"] = (segment_summary["toplam_churn_orani"] * 100).round(2)
+    segment_summary["olgun_churn_orani"] = (segment_summary["olgun_churn_orani"] * 100).round(2)
     segment_summary["ort_recency"] = segment_summary["ort_recency"].round(1)
     segment_summary["ort_siparis"] = segment_summary["ort_siparis"].round(2)
     segment_summary["ort_ciro"] = segment_summary["ort_ciro"].round(2)

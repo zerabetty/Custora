@@ -30,17 +30,26 @@ def run_eda(customer_df):
     print("\n[6] Sayısal değişkenlerin betimsel istatistikleri:")
     print(customer_df.describe().T)
 
-    print("\n[7] Churn dağılımı:")
+    print("\n[7] Churn dağılımı (Toplam Portföy):")
     if "is_churn" in customer_df.columns:
         print(customer_df["is_churn"].value_counts())
 
-        print("\nChurn oranları (%):")
+        print("\nToplam Churn oranları (%):")
         print(
             customer_df["is_churn"]
             .value_counts(normalize=True)
             .mul(100)
             .round(2)
         )
+        if "is_matured" in customer_df.columns:
+            matured_df = customer_df[customer_df["is_matured"] == 1]
+            print(f"\n[8] Olgunlaşmış Müşteri Churn Dağılımı ({len(matured_df):,} müşteri):")
+            print(
+                matured_df["is_churn"]
+                .value_counts(normalize=True)
+                .mul(100)
+                .round(2)
+            )
     else:
         print("is_churn değişkeni bulunamadı.")
 
@@ -506,7 +515,8 @@ def analyze_numeric_distributions(customer_df):
 
     # Modellemeye girmeyecek kimlik/tarih/target değişkenlerini dışarıda tutuyoruz
     exclude_cols = [
-        "is_churn"
+        "is_churn",
+        "is_matured"
     ]
 
     numeric_cols = (
@@ -683,9 +693,9 @@ def analyze_feature_correlations(customer_df):
 
     numeric_df = customer_df.select_dtypes(include="number").copy()
 
-    # Target analiz dışında tutuluyor
+    # Target ve filtre analiz dışında tutuluyor
     numeric_df = numeric_df.drop(
-        columns=["is_churn"],
+        columns=["is_churn", "is_matured"],
         errors="ignore"
     )
 

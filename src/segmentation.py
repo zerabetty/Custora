@@ -108,7 +108,8 @@ def profile_clusters(customer_df, cluster_labels):
         "ratio_accessories",
         "ratio_clothing",
         "ratio_components",
-        "is_churn"
+        "is_churn",
+        "is_matured"
     ]
 
     cluster_profile = (
@@ -244,6 +245,8 @@ def visualize_clusters_pca(kmeans_scaled_df, cluster_labels):
     )
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig("kmeans_pca_clusters.png", dpi=150)
+    print("\n[+] PCA kümeleme görseli kaydedildi: kmeans_pca_clusters.png")
+    plt.close()
 
     return pca_df, pca

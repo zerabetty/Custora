@@ -209,5 +209,11 @@ def main():
         cluster_labels
     )
 
+    # -------------------------------------------------------------------------
+    # Analitik Veri Setinin Güncellenmesi (Cluster ve Segment Bilgileri ile)
+    # -------------------------------------------------------------------------
+    customer_clustered_df.to_csv(FEATURES_PATH, index=True)
+    print(f"\n[+] Analitik müşteri tablosu (Cluster ve Segmentler ile) güncellendi: {FEATURES_PATH}")
+
 if __name__ == "__main__":
     main()
