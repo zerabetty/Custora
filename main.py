@@ -39,6 +39,7 @@ from src.segmentation import (
     visualize_clusters_pca
 )
 from src.cltv import run_cltv_modeling
+from src.churn import run_churn_modeling
 
 # -----------------------------------------------------------------------------
 # Global Yapılandırma ve Parametreler
@@ -225,8 +226,17 @@ def main():
     customer_cltv_df.to_csv(FEATURES_PATH, index=True)
     print(f"\n[+] Analitik müşteri tablosu (CLTV metrikleri ile) güncellendi: {FEATURES_PATH}")
 
+    # -------------------------------------------------------------------------
+    # ADIM 5: Churn Tahmin Modellemesi
+    # -------------------------------------------------------------------------
+    print("\n>>> [AŞAMA 5/7] CHURN TAHMİN MODELLEMESİ")
+
+    customer_churn_df = run_churn_modeling(customer_cltv_df)
+    customer_churn_df.to_csv(FEATURES_PATH, index=True)
+    print(f"\n[+] Analitik müşteri tablosu (churn skorları ile) güncellendi: {FEATURES_PATH}")
+
     print("\n" + "=" * 70)
-    print(f"[+] Pipeline 4. aşamaya kadar tamamlandı. (Süre: {time.time() - pipeline_start:.2f}s)")
+    print(f"[+] Pipeline 5. aşamaya kadar tamamlandı. (Süre: {time.time() - pipeline_start:.2f}s)")
     print("=" * 70)
 
 if __name__ == "__main__":
