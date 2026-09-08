@@ -38,6 +38,7 @@ from src.segmentation import (
     assign_cluster_names,
     visualize_clusters_pca
 )
+from src.cltv import run_cltv_modeling
 
 # -----------------------------------------------------------------------------
 # Global Yapılandırma ve Parametreler
@@ -214,6 +215,19 @@ def main():
     # -------------------------------------------------------------------------
     customer_clustered_df.to_csv(FEATURES_PATH, index=True)
     print(f"\n[+] Analitik müşteri tablosu (Cluster ve Segmentler ile) güncellendi: {FEATURES_PATH}")
+
+    # -------------------------------------------------------------------------
+    # ADIM 4: CLTV Tahmini (BG/NBD & Gamma-Gamma)
+    # -------------------------------------------------------------------------
+    print("\n>>> [AŞAMA 4/7] CLTV TAHMİNİ (BG/NBD & GAMMA-GAMMA)")
+
+    customer_cltv_df = run_cltv_modeling(customer_clustered_df)
+    customer_cltv_df.to_csv(FEATURES_PATH, index=True)
+    print(f"\n[+] Analitik müşteri tablosu (CLTV metrikleri ile) güncellendi: {FEATURES_PATH}")
+
+    print("\n" + "=" * 70)
+    print(f"[+] Pipeline 4. aşamaya kadar tamamlandı. (Süre: {time.time() - pipeline_start:.2f}s)")
+    print("=" * 70)
 
 if __name__ == "__main__":
     main()

@@ -164,7 +164,17 @@ rank(method="first") + qcut
 yöntemi aynı sipariş frekansındaki müşterileri farklı skor gruplarına ayırabiliyor.
 
 **Yorum:** RFM–churn ilişkisindeki beklenmeyen sonuçların bir bölümü churn tanımından değil, frequency scoring yönteminden kaynaklanıyor olabilir.
-**Karar:** Adım 1 kodu hemen değiştirilmedi. Bulgular ekip ile paylaşıldı ve frequency scoring yönteminin revizyonu konusunda ekip kararı bekleniyor.
+**Karar (güncellendi):** Frequency skoru `rank(method="first") + qcut` yerine gerçek sipariş adedine dayalı `pd.cut` ile yeniden tanımlandı:
+
+```python
+pd.cut(
+    order_agg["total_orders"],
+    bins=[0, 1, 2, 3, 5, np.inf],
+    labels=[1, 2, 3, 4, 5]
+)
+```
+
+Aynı sipariş sayısına sahip müşteriler artık aynı frequency skorunu alıyor. RFM segmentleri davranışsal olarak yeniden okunabilir hale geldi.
 
 ## 8. Sayısal Değişkenlerin Dağılım ve Skewness Analizi
 
@@ -422,3 +432,130 @@ Profiling sonuçları incelendikten sonra cluster'lara aşağıdaki iş isimleri
 | 3 | **High-Value Customers** | 534 | %4.10 |
 
 İsimlendirmede `Champions`, `Loyal` veya `At Risk` gibi RFM/CLTV terminolojisi özellikle kullanılmamıştır. K-Means'in ortaya çıkardığı davranışsal yapı ile RFM segmentlerinin birbirine karıştırılmaması amaçlanmıştır.
+
+# ADIM 4 – CLTV TAHMİNİ (BG/NBD & GAMMA-GAMMA)
+
+## 1. Amaç
+
+Bu aşamada `lifetimes` kütüphanesi ile perakende sektör standardı olan **BG/NBD + Gamma-Gamma** yaklaşımı kullanılarak müşterilerin gelecek 3 ve 6 aydaki beklenen işlem sayısı, işlem başı beklenen kârı ve tahmini CLTV değerleri üretilmiştir.
+
+Modelleme, Adım 1'de observation penceresinden türetilen lifetimes metrikleri üzerinde kurulmuştur (data leakage yok):
+
+| lifetimes alanı | Kaynak kolon | Tanım |
+| --- | --- | --- |
+| `frequency` | `repeat_frequency` | Tekrar eden işlem sayısı (`total_orders - 1`) |
+| `recency` | `lifetimes_recency_days / 7` | İlk–son sipariş arası süre (hafta) |
+| `T` | `customer_age_t_days / 7` | Müşteri yaşı, cut-off'a kadar (hafta) |
+| `monetary` | `avg_monetary` | İşlem başına ortalama harcama |
+
+Süreler haftaya çevrilmiş; 3 ay = 12 hafta, 6 ay = 24 hafta alınmıştır. CLTV iskontosu aylık %1 (`discount_rate=0.01`) ile uygulanmıştır.
+
+K-Means çapraz karşılaştırmasının tüm portföyü kapsaması için tek siparişli müşteriler model dışı bırakılmamıştır.
+
+## 2. Veri Yapısı ve Uç Değer Kararı
+
+| Metrik | Değer |
+| --- | --- |
+| Modellenen müşteri | **13.020** |
+| Tekrar alıcı (`frequency > 0`) | 3.883 (%29,82) |
+| Tek siparişli (`frequency = 0`) | 9.137 (%70,18) |
+| Frequency uç değer baskılama | 1 müşteri |
+| Monetary uç değer baskılama | 7 müşteri |
+
+K-Means'te uç değerler silinmemişti; CLTV'de **0.01–0.99 quantile + 1.5 IQR** baskılama yalnızca model kopyasına uygulandı. Ham `customer_features` değerleri değiştirilmedi.
+
+Ortalama frequency 0,49; medyan 0. Portföyün büyük kısmı henüz tekrar satın alma üretmemiş müşterilerden oluşuyor.
+
+## 3. BG/NBD Modeli — Beklenen İşlem Sayısı
+
+`BetaGeoFitter.conditional_expected_number_of_purchases_up_to_time` ile 3 ve 6 aylık beklenen işlem sayıları tahmin edildi.
+
+`penalizer_coef=0.001` ve `0.01` yakınsamadı. Bunun nedeni tek siparişli müşteri oranının %70 olması ve uzun satın alma döngüsüdür. `penalizer_coef=0.05` ile model yakınsadı:
+
+| Parametre | Değer | Yorum |
+| --- | --- | --- |
+| r | 0,5140 | Satın alma oranı şekil parametresi |
+| alpha | 42,77 hafta | Satın alma oranı ölçek (~10 ay) |
+| a | ≈ 0 | Dropout Beta şekil |
+| b | ≈ 0 | Dropout Beta şekil |
+
+**Bulgu:** `a≈0`, `b≈0`. Model, gözlem penceresinde belirgin bir dropout süreci görmüyor.
+**Yorum:** Adım 2'deki inter-purchase analizinde medyan tekrar alma süresi 138 gün, ortalama 261 gündü. Müşterilerin önemli bir kısmı henüz bir sonraki satın alma döngüsünü tamamlamamış olabilir.
+**Karar:** Dropout'suz BG/NBD (Gamma-Poisson indirgenmesi) kabul edildi. `lifetimes` kütüphanesi `frequency=1` ve `a≈0` kombinasyonunda sonsuz tahmin ürettiği için bu kayıtlarda kapalı form `(r + frequency) × t / (alpha + T)` kullanıldı.
+
+| Ufuk | Ortalama | Medyan | Min | P75 | Max |
+| --- | --- | --- | --- | --- | --- |
+| 3 ay | 0,14 | 0,11 | 0,03 | 0,14 | 3,11 |
+| 6 ay | 0,28 | 0,23 | 0,07 | 0,28 | 6,23 |
+
+En yüksek beklenen işlem sayısı, kısa T ve yüksek frequency'ye sahip (yakın dönemde sık alan) müşterilerdedir.
+
+## 4. Gamma-Gamma Modeli — Beklenen Ortalama Kâr
+
+Gamma-Gamma yalnızca **tekrar alıcı 3.883 müşteri** üzerinde eğitildi (`frequency > 0` şartı). Tüm portföy için `conditional_expected_average_profit` hesaplandı.
+
+| Parametre | Değer |
+| --- | --- |
+| p | 3,1075 |
+| q | 0,2081 |
+| v | 2,9011 |
+
+Tekrar alıcılarda `corr(frequency, monetary) = 0,399`. Gamma-Gamma'nın bağımsızlık varsayımı zayıf. Bunun kaynağı Cluster 3'teki B2B benzeri yüksek frekans + yüksek sepet müşterileridir.
+
+Ayrıca `q < 1` olduğu için popülasyon prior'ı `p·v/(q-1)` negatif/tanımsızdır. Bu durumda tek siparişli 9.137 müşteride beklenen kâr, gözlenen `avg_monetary` olarak alındı. Tekrar alıcılarda Gamma-Gamma tahmini pozitif ve gözlenen monetary ile uyumlu (korelasyon ≈ 0,99).
+
+| | monetary | exp_average_profit |
+| --- | --- | --- |
+| Ortalama | 2.052 | 2.318 |
+| Medyan | 783 | 783 |
+| P75 | 2.211 | 2.443 |
+| Max | 92.331 | 123.908 |
+
+## 5. 3 ve 6 Aylık CLTV
+
+İki model, beklenen işlem sayısı ile beklenen ortalama kârın çarpımı ve aylık %1 iskonto ile birleştirildi:
+
+**CLTV = Σ (beklenen işlem_ay × beklenen ortalama kâr) / (1 + 0,01)^ay**
+
+| Ufuk | Ortalama | Medyan | P75 | Max |
+| --- | --- | --- | --- | --- |
+| 3 ay | 597 | 80 | 252 | 54.113 |
+| 6 ay | 1.176 | 158 | 497 | 106.634 |
+
+Tüm 13.020 müşteriye sonlu ve negatif olmayan CLTV atandı. En yüksek CLTV'ler High-Value (Cluster 3) müşterilerindedir.
+
+## 6. CLTV Segmentleri (A / B / C / D)
+
+6 aylık CLTV çeyrekliklerine göre 4 eşit grup oluşturuldu (`pd.qcut`).
+
+| Segment | Müşteri | Ort. CLTV 6ay | Ort. beklenen işlem 6ay | Ort. kâr | Ort. sipariş (repeat) | Ort. recency | Churn |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **A** | 3.255 | 4.341 | 0,42 | 6.663 | 1,54 | 93 gün | %70 |
+| **B** | 3.255 | 295 | 0,19 | 2.242 | 0,17 | 379 gün | %49 |
+| **C** | 3.255 | 60 | 0,30 | 335 | 0,25 | 169 gün | %65 |
+| **D** | 3.255 | 7 | 0,22 | 32 | 0,00 | 99 gün | %82 |
+
+**A:** Yüksek sepet + tekrar alım geçmişi olan müşteriler. Recency görece düşük (93 gün) olsa da 6 aylık churn %70. Bisiklet döngüsü uzun olduğu için “yakın dönemde aldı = elde tutuldu” varsayımı burada da bozuluyor.
+
+**B:** Ağırlıklı olarak eski tarihli, yüksek ticket'lı bisiklet alıcıları. Recency yüksek (379 gün) ama churn en düşük (%49). Adım 2'deki 2024 hacim sıçraması / reactivation ile uyumlu: uzun aradan sonra target penceresinde geri dönen müşteriler.
+
+**C:** Orta-düşük sepet, karışık kategori.
+
+**D:** Neredeyse tamamı tek siparişli, düşük sepetli (aksesuar) müşteriler. En yüksek churn (%82).
+
+## 7. CLTV × K-Means Çapraz Karşılaştırma
+
+| K-Means Segment | A | B | C | D | Yorum |
+| --- | --- | --- | --- | --- | --- |
+| Accessory Shoppers | %0 | %0 | %26,0 | **%74,0** | Düşük sepet → düşük CLTV |
+| Bike Buyers | %38,3 | **%43,9** | %17,8 | %0 | Yüksek ticket bisiklet, A/B'de yoğun |
+| Clothing Shoppers | %0,1 | %0,1 | **%67,5** | %32,4 | Aksesuardan biraz daha değerli, yine C/D |
+| High-Value Customers | **%85,6** | %9,2 | %4,5 | %0,8 | Davranışsal küme ile CLTV A neredeyse örtüşüyor |
+
+Heatmap: `cltv_kmeans_crosstab.png`
+
+**Bulgu:** K-Means kategorik/davranışsal ayrımı (aksesuar / bisiklet / giyim / yüksek değer), CLTV ise gelecekteki parasal değeri sıralıyor. İki yöntem birbirinin kopyası değil, tamamlayıcısı.
+
+**Yorum:** High-Value × A kesişimi elde tutma ve VIP programı için birincil hedef; Bike Buyers × A/B çapraz satış ve servis; Accessory/Clothing × C/D düşük maliyetli aktivasyon adayı. Adım 7 aksiyon matrisi bu kırılım üzerine kurulacak.
+
+**Karar:** CLTV skorları ve A/B/C/D etiketleri analitik tabloya (`exp_purchases_3m`, `exp_purchases_6m`, `exp_average_profit`, `cltv_3m`, `cltv_6m`, `cltv_segment`) yazıldı. Adım 5 churn modeline feature olarak eklenecek.
