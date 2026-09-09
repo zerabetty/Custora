@@ -139,7 +139,7 @@ def fit_bgnbd_model(cltv_df: pd.DataFrame) -> BetaGeoFitter:
             print(f"  a     : {params['a']:.4f}   (dropout Beta şekil)")
             print(f"  b     : {params['b']:.4f}   (dropout Beta şekil)")
             if params["a"] < 1e-4 and params["b"] < 1e-4:
-                print("\n[!] a≈0 ve b≈0: model gözlem penceresinde belirgin dropout görmüyor.")
+                print("\n[!] a~0 ve b~0: model gözlem penceresinde belirgin dropout görmüyor.")
                 print("    AdventureWorks'un uzun satın alma döngüsü ile uyumlu bir bulgudur.")
             return bgf
         except ConvergenceError as exc:

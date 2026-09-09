@@ -32,7 +32,6 @@ NUMERIC_FEATURES = [
     "ratio_accessories",
     "ratio_clothing",
     "ratio_components",
-    "is_matured",
     "cltv_6m",
     "exp_purchases_6m",
     "exp_average_profit",
@@ -242,14 +241,31 @@ def score_customers(best_model, X: pd.DataFrame, scaler=None) -> pd.DataFrame:
 def run_churn_modeling(customer_df: pd.DataFrame) -> pd.DataFrame:
     """Adım 5 orkestrasyonu. Test metriklerini yazdırır, tüm müşterilere skor atar."""
     X, y = prepare_churn_features(customer_df)
-    X_train, X_test, y_train, y_test = split_train_test(X, y)
+
+    # Model eğitimi ve değerlendirmesi yalnızca olgunlaşmış müşteriler üzerinde yapılır
+    # (is_matured == 1: Müşteri yaşı >= 180 gün veya total_orders >= 2)
+    matured_mask = customer_df["is_matured"] == 1
+    n_matured = int(matured_mask.sum())
+    n_unmatured = len(customer_df) - n_matured
+
+    print("\n" + "=" * 70)
+    print("CHURN - MODELLEME EVRENİ (MATURITY FILTER)")
+    print("=" * 70)
+    print(f"Toplam portföy           : {len(customer_df):,} müşteri")
+    print(f"Eğitim / Test Evreni     : {n_matured:,} olgunlaşmış müşteri (%{n_matured / len(customer_df) * 100:.2f})")
+    print(f"İzole edilen taze kitle  : {n_unmatured:,} taze müşteri (%{n_unmatured / len(customer_df) * 100:.2f})")
+
+    X_matured = X[matured_mask].copy()
+    y_matured = y[matured_mask].copy()
+
+    X_train, X_test, y_train, y_test = split_train_test(X_matured, y_matured)
     pos_weight = _scale_pos_weight(y_train)
 
     print("\n" + "=" * 70)
     print("CHURN - MODEL EĞİTİMİ")
     print("=" * 70)
-    print(f"\nscale_pos_weight (train): {pos_weight:.3f}")
-    print("SMOTE kullanılmadı; dengesizlik class_weight / scale_pos_weight ile giderildi.")
+    print(f"\nscale_pos_weight (train): {pos_weight:.3f} (~1.0, 50/50 doğal sınıf dengesi)")
+    print("SMOTE veya yapay ağırlıklandırmaya gerek kalmadan dengeli eğitim sağlandı.")
 
     majority_prob = np.ones(len(y_test), dtype=float)
     baseline_metrics = _evaluate(y_test, majority_prob, "Majority (her zaman churn)")
@@ -302,8 +318,11 @@ def run_churn_modeling(customer_df: pd.DataFrame) -> pd.DataFrame:
     result["churn_pred"] = scored["churn_pred"]
     result["churn_model"] = best_name
 
-    print("\nPortföy churn skoru özeti:")
+    print("\nGenel portföy churn skoru özeti:")
     print(result["churn_proba"].describe().round(4).to_string())
+
+    print("\nOlgunlaşmış portföy churn skoru özeti (is_matured == 1):")
+    print(result.loc[matured_mask, "churn_proba"].describe().round(4).to_string())
     print(f"\n[+] Skorlayan model: {best_name}")
 
     return result

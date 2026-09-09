@@ -564,69 +564,71 @@ Heatmap: `cltv_kmeans_crosstab.png`
 
 ## 1. Amaç
 
-Observation penceresindeki davranışsal metriklerin yanına Adım 3 K-Means küme etiketleri ve Adım 4 CLTV metrikleri eklenerek, 6 aylık hedef penceredeki churn (`is_churn`) tahmin edildi.
+Observation penceresindeki davranışsal metriklerin yanına Adım 3 K-Means küme etiketleri ve Adım 4 CLTV metrikleri eklenerek, 6 aylık hedef penceredeki churn (`is_churn`) tahmin edilmiştir.
 
-SHAP analizi bu turda yapılmadı; istenirse ayrıca eklenecek.
+Model eğitimi ve değerlendirmesi, Adım 2'de tespit edilen yapay churn gürültüsünü önlemek amacıyla **yalnızca döngüsünü tamamlamış olgun müşteriler (`is_matured == 1`)** üzerinde gerçekleştirilmiştir.
 
-## 2. Öznitelikler ve Veri Ayrımı
+## 2. Öznitelikler ve Modelleme Evreni
 
 | Grup | Değişkenler |
 | --- | --- |
-| Davranış | `recency_days`, `customer_age_t_days`, `total_orders`, `total_monetary`, `avg_monetary`, `avg_basket_items`, `discount_ratio`, kategori oranları, `is_matured` |
+| Davranış | `recency_days`, `customer_age_t_days`, `total_orders`, `total_monetary`, `avg_monetary`, `avg_basket_items`, `discount_ratio`, kategori oranları (`ratio_bikes`, `ratio_accessories`, `ratio_clothing`, `ratio_components`) |
 | K-Means | `cluster` (one-hot: 0–3) |
 | CLTV | `cltv_6m`, `exp_purchases_6m`, `exp_average_profit`, `cltv_segment` (one-hot: A–D) |
 
-Toplam 23 öznitelik. Hedef pencereden gelen değişken yok.
+Toplam 22 öznitelik. `is_matured` bir feature olarak modele verilmemiş; modelleme evrenini filtrelemek için kullanılmıştır.
 
-| | Müşteri | Churn oranı |
-| --- | --- | --- |
-| Tüm portföy | 13.020 | %66,49 |
-| Train (%80, stratify) | 10.416 | %66,49 |
-| Test (%20, stratify) | 2.604 | %66,47 |
+| Evren | Müşteri Sayısı | Churn Oranı (%) | Retained Oranı (%) |
+| --- | --- | --- | --- |
+| Toplam Portföy | 13.020 | %66,49 | %33,51 |
+| **Olgunlaşmış Evren (`is_matured == 1`)** | **7.001** | **%49,85** | **%50,15** |
+| İzole Edilen Taze Kitle (`is_matured == 0`) | 6.019 | %85,84 | %14,16 |
 
-Churn çoğunluk sınıfı (8.657 / 4.363). `imblearn` / SMOTE kurulmadı. Logistic Regression’da `class_weight="balanced"`, LightGBM ve XGBoost’ta `scale_pos_weight = n_neg / n_pos = 0,504` kullanıldı.
+Olgunlaşmış kitle doğal **50/50 sınıf dengesine** sahiptir.
+* **Train (%80, stratify):** 5.600 müşteri (Churn: %49,86)
+* **Test (%20, stratify):** 1.401 müşteri (Churn: %49,82)
+* **Dengesizlik Parametresi:** `scale_pos_weight = n_neg / n_pos = 1,006` ($\approx 1,0$). Yapay ağırlıklandırmaya veya SMOTE'a gerek kalmadan dengeli eğitim sağlanmıştır.
 
 ## 3. Model Sonuçları (Test)
 
 | Model | ROC-AUC | F1 | Precision | Recall |
 | --- | --- | --- | --- | --- |
-| Majority (her zaman churn) | 0,500 | 0,799 | 0,665 | 1,000 |
-| Logistic Regression (baseline) | 0,822 | 0,836 | 0,856 | 0,816 |
-| LightGBM | 0,922 | **0,899** | **0,905** | 0,892 |
-| **XGBoost** | **0,924** | 0,898 | 0,902 | **0,894** |
+| Majority (her zaman churn) | 0,500 | 0,665 | 0,498 | 1,000 |
+| Logistic Regression (baseline) | 0,799 | 0,766 | 0,789 | 0,745 |
+| **LightGBM** | **0,929** | **0,859** | **0,887** | **0,832** |
+| XGBoost | 0,928 | 0,860 | 0,879 | 0,842 |
 
-ROC: `churn_roc_curves.png`
+ROC Eğrileri: `churn_roc_curves.png`
 
-**Karar:** Final skorlayıcı **XGBoost**. Logistic Regression baseline’ın üzerinde; iki ağaç modeli birbirine çok yakın.
-
-AUC’nin yüksek olmasının nedeni, Adım 3–4’te görülen ayrışmanın güçlü olması: High-Value churn %23, Accessory Shoppers %81, CLTV D %82, CLTV B %49. Model büyük ölçüde bu yapıları kullanıyor; hedef pencereden sızıntı yok.
+**Karar:** Final skorlayıcı **LightGBM** (ROC-AUC: **0,9294**). Ağaç modelleri birbirine çok yakındır ve baseline modelin belirgin biçimde üzerindedir. Model olgun kitlede hem yüksek hassasiyet (%88,7) hem yüksek yakalama (%83,2) üretmektedir.
 
 ## 4. K-Means ve CLTV’nin Etkisi
 
-XGBoost öznitelik öneminde (gain) ilk sıralar:
+LightGBM öznitelik öneminde (split sayısı) öne çıkan değişkenler:
 
 | Öznitelik | Importance |
 | --- | --- |
-| `cluster_3` (High-Value) | 0,305 |
-| `cltv_segment_A` | 0,162 |
-| `ratio_components` | 0,126 |
-| `cltv_segment_B` | 0,083 |
-| `exp_purchases_6m` | 0,071 |
-
-K-Means cluster kolonlarının toplam importance’ı **0,348**, CLTV kolonlarının **0,369**. İkisi birlikte modelin yaklaşık %72’sini taşıyor.
+| `recency_days` | 1.464 |
+| `customer_age_t_days` | 1.280 |
+| `cltv_6m` | 1.036 |
+| `total_monetary` | 859 |
+| `exp_purchases_6m` | 789 |
+| `exp_average_profit` | 756 |
+| `avg_monetary` | 731 |
+| `ratio_clothing` | 619 |
 
 Görsel: `churn_feature_importance.png`
 
-**Bulgu:** Cluster ve CLTV, ham RFM’nin üzerine gerçekten yeni sinyal ekliyor; özellikle High-Value kümesi ve yüksek CLTV segmenti churn olasılığını düşürüyor.
+**Bulgu:** CLTV metrikleri (`cltv_6m`, `exp_purchases_6m`, `exp_average_profit`) toplam 2.643 importance ile modelin en ağırlıklı öznitelik grubunu oluşturmaktadır.
 
 ## 5. Portföy Skorları
 
-XGBoost tüm müşterilere `churn_proba` ve 0,50 eşiğinde `churn_pred` yazdı.
+LightGBM tüm müşterilere `churn_proba` ve 0,50 eşiğinde `churn_pred` atamıştır.
 
-| | Değer |
-| --- | --- |
-| Ortalama olasılık | 0,59 |
-| Medyan | 0,71 |
-| P25 / P75 | 0,25 / 0,88 |
+| Metrik | Genel Portföy (13.020 Müşteri) | Olgunlaşmış Portföy (7.001 Müşteri) |
+| --- | --- | --- |
+| Ortalama Olasılık | **%66** (Gerçek %66,49 ile tam uyumlu) | **%50** (Gerçek %49,85 ile tam uyumlu) |
+| Medyan Olasılık | %85 | %38 |
+| Çeyreklikler (P25 / P75) | %30 / %93 | %8 / %96 |
 
-Skorlar `customer_features.csv` içinde. Train müşterilerinin olasılıkları in-sample’dır; raporlanan metrikler yalnızca test setine aittir. Adım 7 aksiyon matrisi ve dashboard bu skorları kullanacak.
+Skorlar `customer_features.csv` içine yazılmıştır. Adım 7'deki aksiyon matrisi ve Streamlit dashboard bu skorları doğrudan kullanacaktır.
