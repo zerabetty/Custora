@@ -40,6 +40,13 @@ from src.segmentation import (
 )
 from src.cltv import run_cltv_modeling
 from src.churn import run_churn_modeling
+from src.recommendation import (
+    prepare_recommendation_transactions,
+    analyze_basket_structure,
+    generate_frequent_itemsets,
+    generate_association_rules,
+    generate_customer_recommendations
+)
 
 # -----------------------------------------------------------------------------
 # Global Yapılandırma ve Parametreler
@@ -238,6 +245,51 @@ def main():
     print("\n" + "=" * 70)
     print(f"[+] Pipeline 5. aşamaya kadar tamamlandı. (Süre: {time.time() - pipeline_start:.2f}s)")
     print("=" * 70)
+
+    # -------------------------------------------------------------------------
+    # ADIM 6: Segment Bazlı Ürün Tavsiye Sistemi
+    # -------------------------------------------------------------------------
+
+    print("\n>>> [AŞAMA 6/7] SEGMENT BAZLI ÜRÜN TAVSİYE SİSTEMİ")
+
+    recommendation_transactions = prepare_recommendation_transactions(
+        transaction_df,
+        customer_churn_df,
+        CUTOFF_DATE
+    )
+
+    basket_summary = analyze_basket_structure(
+        recommendation_transactions
+    )
+
+    frequent_itemsets_by_segment = generate_frequent_itemsets(
+        recommendation_transactions
+    )
+
+    rules_by_segment = generate_association_rules(
+        frequent_itemsets_by_segment
+    )
+
+    customer_recommendations = generate_customer_recommendations(
+        recommendation_transactions,
+        customer_churn_df,
+        rules_by_segment,
+        top_n=3
+    )
+    
+    # Recommendation sonuçlarını kalıcı çıktı olarak kaydet
+    recommendation_output_path = BASE_DIR / "customer_recommendations.csv"
+
+    customer_recommendations.to_csv(
+        recommendation_output_path,
+        index=False
+    )
+
+    print(
+        f"\nRecommendation çıktısı kaydedildi: "
+        f"{recommendation_output_path.name}"
+    )
+    
 
 if __name__ == "__main__":
     main()
