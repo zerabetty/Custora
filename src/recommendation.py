@@ -277,6 +277,7 @@ def generate_customer_recommendations(
 
     # Yüksek değerli ve churn riski yüksek müşteriler
     target_customers = customer_df[
+        (customer_df["is_matured"] == 1) &
         (customer_df["cltv_segment"] == "A") &
         (customer_df["churn_pred"] == 1)
     ].copy()
