@@ -371,7 +371,7 @@ hesaplanmıştır.
 
 En yüksek Silhouette Score **K=4 için 0.5805** olarak elde edilmiştir.
 
-K=4 yalnızca maksimum Silhouette değerine dayanarak seçilmemiş; inertia değişimi, cluster büyüklükleri ve sonraki profiling sonuçlarıyla birlikte değerlendirilmiştir.
+K=4 seçiminde maksimum Silhouette Score temel kriter olarak kullanılmış; inertia değerlerindeki değişim, cluster büyüklükleri ve sonraki profiling sonuçları destekleyici olarak değerlendirilmiştir. Otomatik bir Elbow noktası tespit algoritması kullanılmamıştır.
 
 **Karar:** Final K-Means modeli için `K=4` kullanılmıştır.
 
@@ -509,9 +509,16 @@ Ayrıca `q < 1` olduğu için popülasyon prior'ı `p·v/(q-1)` negatif/tanıms�
 | P75      | 2.211    | 2.443              |
 | Max      | 92.331   | 123.908            |
 
+> **Not:** `exp_average_profit` değişken adı `lifetimes` kütüphanesindeki
+> Gamma-Gamma terminolojisinden gelmektedir. Ancak bu projede ürün maliyeti
+> veya kâr marjı verisi bulunmadığından model girdisi gerçek kâr değil,
+> müşterinin ortalama parasal işlem değeridir (`avg_monetary`).
+> Bu nedenle bu değişken proje kapsamında **beklenen ortalama parasal değer
+> (expected average monetary value)** olarak yorumlanmaktadır.
+
 ## 5. 3 ve 6 Aylık CLTV
 
-İki model, beklenen işlem sayısı ile beklenen ortalama kârın çarpımı ve aylık %1 iskonto ile birleştirildi:
+İki model, beklenen işlem sayısı ile beklenen ortalama parasal işlem değerinin çarpımı ve aylık %1 iskonto ile birleştirildi:
 
 **CLTV = Σ (beklenen işlem_ay × beklenen ortalama kâr) / (1 + 0,01)^ay**
 
@@ -582,55 +589,80 @@ Toplam 22 öznitelik. `is_matured` bir feature olarak modele verilmemiş; modell
 | **Olgunlaşmış Evren (`is_matured == 1`)**   | **7.001**      | **%49,85**      | **%50,15**         |
 | İzole Edilen Taze Kitle (`is_matured == 0`) | 6.019          | %85,84          | %14,16             |
 
-Olgunlaşmış kitle doğal **50/50 sınıf dengesine** sahiptir.
+Olgunlaşmış kitle doğal olarak yaklaşık **50/50 sınıf dengesine** sahiptir.
 
-- **Train (%80, stratify):** 5.600 müşteri (Churn: %49,86)
-- **Test (%20, stratify):** 1.401 müşteri (Churn: %49,82)
-- **Dengesizlik Parametresi:** `scale_pos_weight = n_neg / n_pos = 1,006` ($\approx 1,0$). Yapay ağırlıklandırmaya veya SMOTE'a gerek kalmadan dengeli eğitim sağlanmıştır.
+Model seçiminin test setine bakılarak yapılmasını önlemek amacıyla veri üç parçaya ayrılmıştır:
 
-## 3. Model Sonuçları (Test)
+- **Train (%64):** 4.480 müşteri (Churn: %49,87)
+- **Validation (%16):** 1.120 müşteri (Churn: %49,82)
+- **Test (%20):** 1.401 müşteri (Churn: %49,82)
 
-| Model                          | ROC-AUC   | F1        | Precision | Recall    |
-| ------------------------------ | --------- | --------- | --------- | --------- |
-| Majority (her zaman churn)     | 0,500     | 0,665     | 0,498     | 1,000     |
-| Logistic Regression (baseline) | 0,799     | 0,766     | 0,789     | 0,745     |
-| **LightGBM**                   | **0,929** | **0,859** | **0,887** | **0,832** |
-| XGBoost                        | 0,928     | 0,860     | 0,879     | 0,842     |
+Train setindeki sınıf dengesi nedeniyle `scale_pos_weight ≈ 1,005` olarak hesaplanmıştır. Bu nedenle churn sınıfı için güçlü bir yapay ağırlıklandırma veya SMOTE ihtiyacı oluşmamıştır.
 
-ROC Eğrileri: `churn_roc_curves.png`
+Validation seti yalnızca model karşılaştırması ve seçiminde kullanılmış; final test seti model seçimi sırasında tamamen izole tutulmuştur.
 
-**Karar:** Final skorlayıcı **LightGBM** (ROC-AUC: **0,9294**). Ağaç modelleri birbirine çok yakındır ve baseline modelin belirgin biçimde üzerindedir. Model olgun kitlede hem yüksek hassasiyet (%88,7) hem yüksek yakalama (%83,2) üretmektedir.
+## 3. Model Seçimi ve Final Test Sonuçları
+
+Üç aday model Train setinde eğitilmiş ve Validation setinde karşılaştırılmıştır:
+
+| Model                          |   ROC-AUC |       F1 | Precision |   Recall |
+| ------------------------------ | --------: | -------: | --------: | -------: |
+| Majority (her zaman churn)     |     0,500 |     0,67 |      0,50 |     1,00 |
+| Logistic Regression (baseline) |     0,800 |     0,75 |      0,77 |     0,73 |
+| LightGBM                       |     0,910 |     0,83 |      0,84 |     0,81 |
+| **XGBoost**                    | **0,910** | **0,83** |  **0,83** | **0,82** |
+
+Validation ROC-AUC sonucuna göre final model olarak **XGBoost** seçilmiştir.
+
+Model seçimi tamamlandıktan sonra XGBoost, Train ve Validation setleri birleştirilerek toplam **5.600 müşteri** üzerinde yeniden eğitilmiş ve daha önce model seçiminde hiç kullanılmamış Test setinde yalnızca bir kez değerlendirilmiştir.
+
+### Final Test Performansı
+
+| Metrik    |      Sonuç |
+| --------- | ---------: |
+| ROC-AUC   | **0,9278** |
+| F1        | **0,8576** |
+| Precision | **0,8748** |
+| Recall    | **0,8410** |
+
+ROC Eğrisi: `churn_roc_curves.png`
+
+**Karar:** Final churn skorlayıcısı **XGBoost** olarak belirlenmiştir. Validation setinde yapılan model seçiminin ardından bağımsız Test setinde elde edilen **0,9278 ROC-AUC**, modelin olgunlaşmış müşteri kitlesinde churn riskini güçlü biçimde ayırt edebildiğini göstermektedir.
+
+Bu yapı sayesinde Test seti model seçimi amacıyla kullanılmamış ve final performans tahmininin bağımsızlığı korunmuştur.
 
 ## 4. K-Means ve CLTV’nin Etkisi
 
-LightGBM öznitelik öneminde (split sayısı) öne çıkan değişkenler:
+Final XGBoost modelinin öznitelik önemlerinde davranışsal segment bilgisi belirgin biçimde öne çıkmıştır.
 
-| Öznitelik             | Importance |
-| --------------------- | ---------- |
-| `recency_days`        | 1.464      |
-| `customer_age_t_days` | 1.280      |
-| `cltv_6m`             | 1.036      |
-| `total_monetary`      | 859        |
-| `exp_purchases_6m`    | 789        |
-| `exp_average_profit`  | 756        |
-| `avg_monetary`        | 731        |
-| `ratio_clothing`      | 619        |
+| Öznitelik            | Importance |
+| -------------------- | ---------: |
+| `cluster_3`          |       0,54 |
+| `ratio_components`   |       0,14 |
+| `exp_purchases_6m`   |       0,07 |
+| `cluster_1`          |       0,03 |
+| `discount_ratio`     |       0,03 |
+| `recency_days`       |       0,02 |
+| `total_monetary`     |       0,02 |
+| `exp_average_profit` |       0,02 |
+| `cltv_segment_C`     |       0,01 |
+| `ratio_bikes`        |       0,01 |
 
 Görsel: `churn_feature_importance.png`
 
-**Bulgu:** CLTV metrikleri (`cltv_6m`, `exp_purchases_6m`, `exp_average_profit`) toplam 2.643 importance ile modelin en ağırlıklı öznitelik grubunu oluşturmaktadır.
+K-Means cluster değişkenlerinin toplam feature importance değeri yaklaşık **0,5846**, CLTV ile ilişkili metriklerin toplam importance değeri ise yaklaşık **0,1342** olarak elde edilmiştir.
+
+**Bulgu:** Churn tahmininde müşterinin davranışsal segmenti en güçlü sinyallerden biri olurken, CLTV ve beklenen satın alma davranışı da ek açıklayıcı bilgi sağlamıştır. Böylece K-Means ve CLTV çıktıları yalnızca ayrı analizler olarak kalmamış, churn modelinin öznitelikleri olarak da kullanılmıştır.
 
 ## 5. Portföy Skorları
 
-LightGBM tüm müşterilere `churn_proba` ve 0,50 eşiğinde `churn_pred` atamıştır.
+Final XGBoost modeli ile tüm **13.020 müşteriye** `churn_proba` ve 0,50 karar eşiğinde `churn_pred` atanmıştır.
 
-| Metrik                   | Genel Portföy (13.020 Müşteri)         | Olgunlaşmış Portföy (7.001 Müşteri)    |
-| ------------------------ | -------------------------------------- | -------------------------------------- |
-| Ortalama Olasılık        | **%66** (Gerçek %66,49 ile tam uyumlu) | **%50** (Gerçek %49,85 ile tam uyumlu) |
-| Medyan Olasılık          | %85                                    | %38                                    |
-| Çeyreklikler (P25 / P75) | %30 / %93                              | %8 / %96                               |
+Model yalnızca `is_matured == 1` olan 7.001 müşteri üzerinde eğitilip değerlendirilmiş olmakla birlikte, operasyonel kullanım amacıyla tüm müşteri portföyü skorlanmıştır. Recommendation aşamasında yüksek değerli ve churn riski taşıyan müşteriler seçilirken tekrar **maturity filtresi** uygulanmıştır.
 
-Skorlar `customer_features.csv` içine yazılmıştır. Adım 7'deki aksiyon matrisi ve Streamlit dashboard bu skorları doğrudan kullanacaktır.
+Genel portföyde ortalama churn olasılığı yaklaşık **%64**, olgunlaşmış müşteri kitlesinde ise yaklaşık **%50** olarak gerçekleşmiştir.
+
+Skorlar `customer_features.csv` içine yazılmıştır. Adım 6 recommendation sistemi bu skorları kullanmakta; Adım 7'deki aksiyon matrisi ve Streamlit dashboard da bu çıktılardan yararlanacaktır.
 
 # ADIM 6 — Segment Bazlı Ürün Tavsiye Sistemi
 
@@ -753,32 +785,42 @@ kural elde edilmiştir.
 
 Recommendation sisteminin öncelikli hedef kitlesi:
 
-- CLTV segmenti A olan
-- churn_pred = 1 olan
+- `is_matured == 1` olan,
+- CLTV segmenti **A** olan,
+- `churn_pred == 1` olan
 
-yüksek değerli ve kayıp riski yüksek müşteriler olarak belirlenmiştir.
+yüksek değerli, yeterli müşteri geçmişine sahip ve kayıp riski yüksek müşteriler olarak belirlenmiştir.
 
-Bu kriterleri karşılayan:
+Maturity filtresinin recommendation aşamasında yeniden uygulanmasının amacı, churn modeli tüm portföye skor üretse de henüz yeterli gözlem geçmişine sahip olmayan taze müşterilerin yüksek churn riski nedeniyle yanlışlıkla aksiyon kitlesine dahil edilmesini önlemektir.
 
-- 2,353 hedef müşteri
+Final XGBoost churn skorları kullanıldığında bu üç kriteri karşılayan:
+
+- **2.145 hedef müşteri**
 
 bulunmuştur.
 
-Association rule'lar kullanılarak:
+Segment bazlı association rule'lar kullanılarak:
 
-- 1,284 müşteriye recommendation üretilebilmiştir
-- toplam 1,924 ürün önerisi oluşturulmuştur
+- **1.172 müşteriye** recommendation üretilebilmiştir,
+- toplam **1.775 ürün önerisi** oluşturulmuştur.
 
-Bu sonuç yaklaşık %55 recommendation coverage'a karşılık gelmektedir.
+Böylece recommendation coverage:
+
+**1.172 / 2.145 = %54,64**
+
+olarak gerçekleşmiştir.
+
+Coverage'ın %100 olmamasının temel nedeni, her hedef müşterinin satın alma geçmişinde kendi segmentindeki association rule'ların antecedent koşullarını sağlayan ve aynı zamanda daha önce satın almadığı uygun bir consequent ürün bulunmamasıdır. Bu nedenle recommendation üretilememesi sistem hatası olarak değil, mevcut kuralların ilgili müşteri için yeterli eşleşme oluşturmaması olarak değerlendirilmiştir.
 
 Her müşteri için:
 
-1. K-Means segmenti belirlenmiş,
-2. observation döneminde satın aldığı ürünler bulunmuş,
-3. yalnızca müşterinin kendi segmentine ait association rule'lar değerlendirilmiş,
-4. daha önce satın aldığı ürünler öneri listesinden çıkarılmış,
-5. aday ürünler lift, confidence ve support değerlerine göre sıralanmış,
-6. müşteri başına en fazla 3 ürün önerilmiştir.
+1. Müşterinin maturity, CLTV ve churn kriterlerini sağlayıp sağlamadığı kontrol edilmiş,
+2. K-Means segmenti belirlenmiş,
+3. observation döneminde satın aldığı ürünler bulunmuş,
+4. yalnızca müşterinin kendi segmentine ait association rule'lar değerlendirilmiş,
+5. daha önce satın aldığı ürünler öneri listesinden çıkarılmış,
+6. aday ürünler lift, confidence ve support değerlerine göre sıralanmış,
+7. müşteri başına en fazla 3 ürün önerilmiştir.
 
 ## 6.7 Örnek Recommendation
 
