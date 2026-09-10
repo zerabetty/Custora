@@ -435,7 +435,7 @@ Profiling sonuçları incelendikten sonra cluster'lara aşağıdaki iş isimleri
 
 ## 1. Amaç
 
-Bu aşamada `lifetimes` kütüphanesi ile perakende sektör standardı olan **BG/NBD + Gamma-Gamma** yaklaşımı kullanılarak müşterilerin gelecek 3 ve 6 aydaki beklenen işlem sayısı, işlem başı beklenen kârı ve tahmini CLTV değerleri üretilmiştir.
+Bu aşamada `lifetimes` kütüphanesi ile perakende sektör standardı olan **BG/NBD + Gamma-Gamma** yaklaşımı kullanılarak müşterilerin gelecek 3 ve 6 aydaki beklenen işlem sayısı, işlem başı beklenen parasal değeri ve tahmini müşteri değerleri üretilmiştir.
 
 Modelleme, Adım 1'de observation penceresinden türetilen lifetimes metrikleri üzerinde kurulmuştur (data leakage yok):
 
@@ -488,9 +488,9 @@ Ortalama frequency 0,49; medyan 0. Portföyün büyük kısmı henüz tekrar sat
 
 En yüksek beklenen işlem sayısı, kısa T ve yüksek frequency'ye sahip (yakın dönemde sık alan) müşterilerdedir.
 
-## 4. Gamma-Gamma Modeli — Beklenen Ortalama Kâr
+## 4. Gamma-Gamma Modeli — Beklenen Ortalama Parasal Değer
 
-Gamma-Gamma yalnızca **tekrar alıcı 3.883 müşteri** üzerinde eğitildi (`frequency > 0` şartı). Tüm portföy için `conditional_expected_average_profit` hesaplandı.
+Gamma-Gamma yalnızca **tekrar alıcı 3.883 müşteri** üzerinde eğitildi (`frequency > 0` şartı). `lifetimes` kütüphanesindeki `conditional_expected_average_profit` fonksiyonu kullanılarak müşterilerin beklenen ortalama parasal işlem değeri hesaplandı.
 
 | Parametre | Değer  |
 | --------- | ------ |
@@ -500,7 +500,7 @@ Gamma-Gamma yalnızca **tekrar alıcı 3.883 müşteri** üzerinde eğitildi (`f
 
 Tekrar alıcılarda `corr(frequency, monetary) = 0,399`. Gamma-Gamma'nın bağımsızlık varsayımı zayıf. Bunun kaynağı Cluster 3'teki B2B benzeri yüksek frekans + yüksek sepet müşterileridir.
 
-Ayrıca `q < 1` olduğu için popülasyon prior'ı `p·v/(q-1)` negatif/tanımsızdır. Bu durumda tek siparişli 9.137 müşteride beklenen kâr, gözlenen `avg_monetary` olarak alındı. Tekrar alıcılarda Gamma-Gamma tahmini pozitif ve gözlenen monetary ile uyumlu (korelasyon ≈ 0,99).
+Ayrıca `q < 1` olduğu için popülasyon prior'ı `p·v/(q-1)` negatif/tanımsızdır. Bu durumda tek siparişli 9.137 müşteride beklenen ortalama parasal değer, gözlenen `avg_monetary` olarak alındı. Tekrar alıcılarda Gamma-Gamma tahmini pozitif ve gözlenen monetary ile uyumlu (korelasyon ≈ 0,99).
 
 |          | monetary | exp_average_profit |
 | -------- | -------- | ------------------ |
@@ -520,7 +520,7 @@ Ayrıca `q < 1` olduğu için popülasyon prior'ı `p·v/(q-1)` negatif/tanıms�
 
 İki model, beklenen işlem sayısı ile beklenen ortalama parasal işlem değerinin çarpımı ve aylık %1 iskonto ile birleştirildi:
 
-**CLTV = Σ (beklenen işlem_ay × beklenen ortalama kâr) / (1 + 0,01)^ay**
+**CLTV = Σ (beklenen işlem_ay × beklenen ortalama parasal işlem değeri) / (1 + 0,01)^ay**
 
 | Ufuk | Ortalama | Medyan | P75 | Max     |
 | ---- | -------- | ------ | --- | ------- |
@@ -533,12 +533,12 @@ Tüm 13.020 müşteriye sonlu ve negatif olmayan CLTV atandı. En yüksek CLTV'l
 
 6 aylık CLTV çeyrekliklerine göre 4 eşit grup oluşturuldu (`pd.qcut`).
 
-| Segment | Müşteri | Ort. CLTV 6ay | Ort. beklenen işlem 6ay | Ort. kâr | Ort. sipariş (repeat) | Ort. recency | Churn |
-| ------- | ------- | ------------- | ----------------------- | -------- | --------------------- | ------------ | ----- |
-| **A**   | 3.255   | 4.341         | 0,42                    | 6.663    | 1,54                  | 93 gün       | %70   |
-| **B**   | 3.255   | 295           | 0,19                    | 2.242    | 0,17                  | 379 gün      | %49   |
-| **C**   | 3.255   | 60            | 0,30                    | 335      | 0,25                  | 169 gün      | %65   |
-| **D**   | 3.255   | 7             | 0,22                    | 32       | 0,00                  | 99 gün       | %82   |
+| Segment | Müşteri | Ort. CLTV 6ay | Ort. beklenen işlem 6ay | Ort. parasal değer | Ort. sipariş (repeat) | Ort. recency | Churn |
+| ------- | ------- | ------------- | ----------------------- | ------------------ | --------------------- | ------------ | ----- |
+| **A**   | 3.255   | 4.341         | 0,42                    | 6.663              | 1,54                  | 93 gün       | %70   |
+| **B**   | 3.255   | 295           | 0,19                    | 2.242              | 0,17                  | 379 gün      | %49   |
+| **C**   | 3.255   | 60            | 0,30                    | 335                | 0,25                  | 169 gün      | %65   |
+| **D**   | 3.255   | 7             | 0,22                    | 32                 | 0,00                  | 99 gün       | %82   |
 
 **A:** Yüksek sepet + tekrar alım geçmişi olan müşteriler. Recency görece düşük (93 gün) olsa da 6 aylık churn %70. Bisiklet döngüsü uzun olduğu için “yakın dönemde aldı = elde tutuldu” varsayımı burada da bozuluyor.
 
